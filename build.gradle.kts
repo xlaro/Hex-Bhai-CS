@@ -9,10 +9,9 @@ buildscript {
         mavenCentral()
         maven("https://jitpack.io")
     }
-
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
-        classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
+        classpath("com.github.recloudstream:gradle:-SNAPSHOT")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.10")
     }
 }
@@ -39,18 +38,15 @@ subprojects {
 
     android {
         namespace = "hex.cs.provider"
-
         defaultConfig {
             minSdk = 21
             compileSdkVersion(35)
             targetSdk = 35
         }
-
         compileOptions {
             sourceCompatibility = JavaVersion.VERSION_1_8
             targetCompatibility = JavaVersion.VERSION_1_8
         }
-
         tasks.withType<KotlinJvmCompile> {
             compilerOptions {
                 jvmTarget.set(JvmTarget.JVM_1_8)
@@ -67,7 +63,6 @@ subprojects {
     dependencies {
         val cloudstream by configurations
         val implementation by configurations
-
         cloudstream("com.lagradost:cloudstream3:pre-release")
         implementation(kotlin("stdlib"))
         implementation("com.github.Blatzar:NiceHttp:0.4.11")
