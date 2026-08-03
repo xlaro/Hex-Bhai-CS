@@ -5,6 +5,7 @@ import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 
@@ -24,7 +25,7 @@ object CineFreekExtractor {
                 val decodedBytes = Base64.decode(base64Id, Base64.DEFAULT)
                 var decodedUrl = String(decodedBytes, StandardCharsets.UTF_8)
 
-                // Remove suffix pattern (e.g., newgo32)
+                // Remove trailing suffix (e.g., newgo32)
                 decodedUrl = decodedUrl.replace(Regex("newgo\\d+$"), "")
 
                 // Switch path from file download /f/ to stream frame /x/
@@ -42,13 +43,14 @@ object CineFreekExtractor {
 
                         if (directFile.startsWith("http")) {
                             callback.invoke(
-                                ExtractorLink(
-                                    name = apiName,
+                                newExtractorLink(
                                     source = "CineCloud Direct",
-                                    url = directFile,
-                                    referer = streamUrl,
-                                    quality = CineFreekParser.parseQualityFromName("$linkText $directFile")
-                                )
+                                    name = apiName,
+                                    url = directFile
+                                ) {
+                                    this.headers = mapOf("Referer" to streamUrl)
+                                    this.quality = CineFreekParser.parseQualityFromName("$linkText $directFile")
+                                }
                             )
                         }
                     } else {

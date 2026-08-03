@@ -80,7 +80,7 @@ class CineFreek : MainAPI() {
                 this.posterUrl = details.posterUrl
                 this.plot = details.plot
                 this.year = details.year
-                this.rating = details.rating?.toScoreData()
+                details.rating?.let { this.score = Score.from10(it.toFloat()) }
                 this.tags = details.tags
                 this.backgroundPosterUrl = details.screenshots.firstOrNull()
             }
@@ -89,7 +89,7 @@ class CineFreek : MainAPI() {
                 this.posterUrl = details.posterUrl
                 this.plot = details.plot
                 this.year = details.year
-                this.rating = details.rating?.toScoreData()
+                details.rating?.let { this.score = Score.from10(it.toFloat()) }
                 this.tags = details.tags
                 this.backgroundPosterUrl = details.screenshots.firstOrNull()
             }
