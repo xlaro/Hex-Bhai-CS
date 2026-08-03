@@ -3,10 +3,13 @@ package hex.cs.new
 import android.util.Base64
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.SubtitleFile
 import org.jsoup.nodes.Element
+import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 
 class CineFreek : MainAPI() {
@@ -73,7 +76,7 @@ class CineFreek : MainAPI() {
         }
         if (title.isEmpty()) return null
 
-        // Fix for missing image on featured/top items: check all lazy-load attributes & picture tags
+        // Image extraction supporting lazy loading
         val imgEl = element.selectFirst("img")
         val posterUrl = fixUrlNull(
             imgEl?.attr("src")?.takeIf { it.isNotBlank() && !it.startsWith("data:image") }
@@ -124,7 +127,9 @@ class CineFreek : MainAPI() {
         // Metadata Parsing
         val bodyText = document.text()
         val ratingMatch = Regex("IMDb Rating:?\\s*([0-9\\.]+)/10").find(bodyText)
-        val rating = ratingMatch?.groupValues?.getOrNull(1)?.toScoreData()
+        val scoreObj = ratingMatch?.groupValues?.getOrNull(1)?.toFloatOrNull()?.let {
+            Score.from10(it)
+        }
 
         val yearMatch = Regex("(19|20)\\d{2}").find(title) ?: Regex("(19|20)\\d{2}").find(bodyText)
         val year = yearMatch?.value?.toIntOrNull()
@@ -138,7 +143,7 @@ class CineFreek : MainAPI() {
             .filter { it.isNotBlank() }
             .distinct()
 
-        // Extract screenshots to build background/gallery
+        // Extract screenshots
         val screenshots = document.select(".screenshot-container img, .screenshot-item img").mapNotNull {
             fixUrlNull(it.attr("src").ifEmpty { it.attr("data-src") })
         }
@@ -151,7 +156,6 @@ class CineFreek : MainAPI() {
         return if (isSeries) {
             val episodes = mutableListOf<Episode>()
             
-            // Extract links either by structured lists or download blocks
             val epElements = document.select(".entry-content a[href*='episode'], .episodes-list a, ul.episodes li, .download-links-div .movie-title")
             epElements.forEachIndexed { index, epEl ->
                 val epHref = fixUrlNull(epEl.selectFirst("a")?.attr("href") ?: epEl.attr("href")) ?: url
@@ -169,7 +173,7 @@ class CineFreek : MainAPI() {
                 this.posterUrl = poster
                 this.plot = description
                 this.year = year
-                this.rating = rating
+                this.score = scoreObj
                 this.tags = tags
                 this.backgroundPosterUrl = screenshots.firstOrNull()
             }
@@ -178,7 +182,7 @@ class CineFreek : MainAPI() {
                 this.posterUrl = poster
                 this.plot = description
                 this.year = year
-                this.rating = rating
+                this.score = scoreObj
                 this.tags = tags
                 this.backgroundPosterUrl = screenshots.firstOrNull()
             }
@@ -193,7 +197,6 @@ class CineFreek : MainAPI() {
     ): Boolean {
         val document = app.get(data).document
 
-        // Select all stream/download buttons and embedded elements
         val downloadButtons = document.select(".dlbtn-container a, a[href*='generate.php'], a.dlbtn, a[href*='gdrive'], iframe")
 
         downloadButtons.forEach { link ->
@@ -203,13 +206,15 @@ class CineFreek : MainAPI() {
             if (href.contains("generate.php?id=")) {
                 val base64Id = href.substringAfter("id=")
                 try {
-                    val decodedBytes = Base64.decode(base64Id, Base64.DEFAULT)
+                    // Safe Base64 decoding (supports URL-safe and missing padding)
+                    val cleanBase64 = base64Id.trim().replace(" ", "+")
+                    val decodedBytes = Base64.decode(cleanBase64, Base64.DEFAULT or Base64.URL_SAFE)
                     var decodedUrl = String(decodedBytes, StandardCharsets.UTF_8)
 
-                    // Stripping trailing custom strings like 'newgo32'
+                    // Remove suffix pattern
                     decodedUrl = decodedUrl.replace(Regex("newgo\\d+$"), "")
 
-                    // Switch path /f/ to /x/ (Watch page layout)
+                    // Switch path /f/ to /x/
                     val streamUrl = decodedUrl.replace("/f/", "/x/")
 
                     val streamDoc = app.get(streamUrl).document
@@ -218,20 +223,25 @@ class CineFreek : MainAPI() {
                     if (iframeSrc.isNotEmpty()) {
                         val fullIframeUrl = fixUrlNull(iframeSrc) ?: iframeSrc
                         
-                        // Handle yagaverse embed player API
                         if (fullIframeUrl.contains("yagaverse.net")) {
                             val mediaId = fullIframeUrl.substringAfter("id=").substringBefore("&")
-                            val directFile = java.net.URLDecoder.decode(mediaId, "UTF-8")
+                            val directFile = URLDecoder.decode(mediaId, "UTF-8")
                             
                             if (directFile.startsWith("http")) {
                                 callback.invoke(
-                                    ExtractorLink(
-                                        name = this.name,
+                                    newExtractorLink(
                                         source = "CineCloud Direct",
-                                        url = directFile,
-                                        referer = streamUrl,
-                                        quality = getQualityFromName(link.text() + " " + directFile)
-                                    )
+                                        name = this.name,
+                                        url = directFile
+                                    ) {
+                                        this.headers = mapOf(
+                                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                                            "Referer" to streamUrl,
+                                            "Origin" to "https://stream.yagaverse.net"
+                                        )
+                                        this.quality = getQualityFromName("${link.text()} $directFile")
+                                        this.type = ExtractorLinkType.VIDEO
+                                    }
                                 )
                             }
                         } else {
