@@ -2,9 +2,7 @@ package hex.cs.new
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.SubtitleFile
-import org.jsoup.nodes.Element
 
 class CineFreek : MainAPI() {
     override var mainUrl = "https://cinefreak.net"
@@ -20,82 +18,56 @@ class CineFreek : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) mainUrl else "$mainUrl/page/$page/"
         val document = app.get(url).document
+        val items = CineFreekParser.parseSearchItems(document)
 
-        val homeItems = document.select("a.movie-card, article.post-item, div.ml-item").mapNotNull { element ->
-            toSearchResult(element)
+        val homePageItems = items.map { item ->
+            if (item.tvType == TvType.TvSeries) {
+                newTvSeriesSearchResponse(item.title, item.url, item.tvType) {
+                    this.posterUrl = item.posterUrl
+                }
+            } else {
+                newMovieSearchResponse(item.title, item.url, item.tvType) {
+                    this.posterUrl = item.posterUrl
+                }
+            }
         }
 
         return newHomePageResponse(
-            list = HomePageList("Latest Releases", homeItems),
-            hasNext = document.select("a.next, .nav-links a:contains(Next)").isNotEmpty()
+            list = HomePageList("Latest Releases", homePageItems),
+            hasNext = document.select("a.next, .nav-links a:contains(Next), a.next.page-numbers").isNotEmpty()
         )
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val searchUrl = "$mainUrl/?s=$query"
         val document = app.get(searchUrl).document
+        val items = CineFreekParser.parseSearchItems(document)
 
-        return document.select("a.movie-card, article.post-item, div.ml-item").mapNotNull { element ->
-            toSearchResult(element)
-        }
-    }
-
-    private fun toSearchResult(element: Element): SearchResponse? {
-        val href = fixUrlNull(element.attr("href").ifEmpty { element.selectFirst("a")?.attr("href") }) ?: return null
-        val title = element.select("h3.movie-card-title, h2, h3, .entry-title").text().trim().ifEmpty {
-            element.attr("aria-label").replace(" details", "").trim()
-        }
-        if (title.isEmpty()) return null
-
-        val posterUrl = fixUrlNull(
-            element.select("img").attr("src").ifEmpty {
-                element.select("img").attr("data-src")
-            }
-        )
-
-        val isSeries = element.select(".series-info-bottom, .status-ep").isNotEmpty() ||
-                       title.contains("Season", ignoreCase = true) ||
-                       title.contains("Episode", ignoreCase = true) ||
-                       href.contains("/series/") || 
-                       href.contains("/tv/")
-
-        val tvType = if (isSeries) TvType.TvSeries else TvType.Movie
-
-        return if (isSeries) {
-            newTvSeriesSearchResponse(title, href, tvType) {
-                this.posterUrl = posterUrl
-            }
-        } else {
-            newMovieSearchResponse(title, href, tvType) {
-                this.posterUrl = posterUrl
+        return items.map { item ->
+            if (item.tvType == TvType.TvSeries) {
+                newTvSeriesSearchResponse(item.title, item.url, item.tvType) {
+                    this.posterUrl = item.posterUrl
+                }
+            } else {
+                newMovieSearchResponse(item.title, item.url, item.tvType) {
+                    this.posterUrl = item.posterUrl
+                }
             }
         }
     }
 
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
+        val details = CineFreekParser.parseDetails(document, url)
 
-        val title = document.select("h1.entry-title, h1.title").text().trim().ifEmpty {
-            document.select("title").text().split("|").firstOrNull()?.trim() ?: "Unknown"
-        }
-        val poster = fixUrlNull(
-            document.select(".poster img, .entry-content img, article img").attr("src")
-        )
-        val description = document.select(".entry-content p, .synopsis, .description").firstOrNull()?.text()?.trim()
-
-        val isSeries = title.contains("Season", ignoreCase = true) || 
-                       document.select(".episode-list, a[href*='episode'], ul.episodes").isNotEmpty() ||
-                       url.contains("/series/") || 
-                       url.contains("/tv/")
-
-        return if (isSeries) {
+        return if (details.isSeries) {
             val episodes = mutableListOf<Episode>()
-            
-            document.select(".entry-content a[href*='episode'], .episodes-list a, ul.episodes li").forEachIndexed { index, epLink ->
-                val targetElement = if (epLink.tagName() == "li") epLink.selectFirst("a") else epLink
-                val epHref = fixUrlNull(targetElement?.attr("href")) ?: return@forEachIndexed
-                val epName = targetElement?.text()?.ifEmpty { "Episode ${index + 1}" } ?: "Episode ${index + 1}"
-                
+            val epElements = document.select(".entry-content a[href*='episode'], .episodes-list a, ul.episodes li, .download-links-div .movie-title")
+
+            epElements.forEachIndexed { index, epEl ->
+                val epHref = epEl.selectFirst("a")?.attr("href") ?: epEl.attr("href") ?: url
+                val epName = epEl.text().ifEmpty { "Episode ${index + 1}" }
+
                 episodes.add(
                     newEpisode(epHref) {
                         this.name = epName
@@ -104,14 +76,22 @@ class CineFreek : MainAPI() {
                 )
             }
 
-            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
-                this.posterUrl = poster
-                this.plot = description
+            newTvSeriesLoadResponse(details.title, url, TvType.TvSeries, episodes) {
+                this.posterUrl = details.posterUrl
+                this.plot = details.plot
+                this.year = details.year
+                this.rating = details.rating?.toScoreData()
+                this.tags = details.tags
+                this.backgroundPosterUrl = details.screenshots.firstOrNull()
             }
         } else {
-            newMovieLoadResponse(title, url, TvType.Movie, url) {
-                this.posterUrl = poster
-                this.plot = description
+            newMovieLoadResponse(details.title, url, TvType.Movie, url) {
+                this.posterUrl = details.posterUrl
+                this.plot = details.plot
+                this.year = details.year
+                this.rating = details.rating?.toScoreData()
+                this.tags = details.tags
+                this.backgroundPosterUrl = details.screenshots.firstOrNull()
             }
         }
     }
@@ -123,10 +103,20 @@ class CineFreek : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val document = app.get(data).document
+        val downloadButtons = document.select(".dlbtn-container a, a[href*='generate.php'], a.dlbtn, a[href*='gdrive'], iframe")
 
-        document.select("a[href*='gdrive'], a[href*='stream'], a.maxbutton, .entry-content a.btn, iframe").forEach { link ->
-            val targetUrl = fixUrlNull(if (link.tagName() == "iframe") link.attr("src") else link.attr("href")) ?: return@forEach
-            loadExtractor(targetUrl, data, subtitleCallback, callback)
+        downloadButtons.forEach { link ->
+            val href = link.attr("href").ifEmpty { link.attr("src") }
+            if (href.isNotBlank()) {
+                CineFreekExtractor.extractLink(
+                    rawHref = href,
+                    linkText = link.text(),
+                    pageUrl = data,
+                    apiName = this.name,
+                    subtitleCallback = subtitleCallback,
+                    callback = callback
+                )
+            }
         }
 
         return true
