@@ -28,13 +28,13 @@ jobs:
       - name: Build Plugins & Generate Index
         run: |
           chmod +x gradlew
-          ./gradlew make
+          ./gradlew :CineFreek:make makePluginsJson
 
       - name: Deploy to GitHub Pages / Docs
         run: |
           mkdir -p docs
-          cp build/*.cs3 docs/ 2>/dev/null || true
-          cp build/*.json docs/ 2>/dev/null || true
+          cp build/*.cs3 CineFreek/build/*.cs3 docs/ 2>/dev/null || true
+          cp build/*.json CineFreek/build/*.json docs/ 2>/dev/null || true
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add docs/
