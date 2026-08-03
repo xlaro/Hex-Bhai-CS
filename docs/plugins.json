@@ -1,10 +1,10 @@
 [
     {
         "iconUrl": "https://cinefreak.net/wp-content/uploads/2024/08/CineFeak.webp",
-        "fileHash": "sha256-975292dc599eb8aae5a8182c3de5cd7f80fe1838c1973ef141b5a3312f1b14e3",
+        "fileHash": "sha256-8b8780fa077344b3f72f8b85171d1c98998d7a1433ccb932be52713e269369d9",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/xlaro/Hex-Bhai-CS",
-        "fileSize": 10851,
+        "fileSize": 20425,
         "status": 1,
         "language": "en",
         "authors": [
